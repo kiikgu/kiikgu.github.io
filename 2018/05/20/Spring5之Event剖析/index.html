@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="generator" content="Hexo 3.8.0"><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description" content="积累、思考、成长"><title>Spring5之Event剖析 | 王定坤的博客</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.0"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/normalize/7.0.0/normalize.min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">Spring5之Event剖析</h1><a id="logo" href="/.">王定坤的博客</a><p class="description">业精于勤而荒于嬉，行成于思而毁于随</p></div><div id="nav-menu"><a href="/." class="current"><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a><a href="/atom.xml"><i class="fa fa-rss"> 订阅</i></a></div></div><div id="layout" class="pure-g"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">Spring5之Event剖析</h1><div class="post-meta">May 20, 2018<span> | </span><span class="category"><a href="/categories/spring5学习/">spring5学习</a></span><script src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><div class="clear"><div id="toc" class="toc-article"><div class="toc-title">文章目录</div><ol class="toc"><li class="toc-item toc-level-4"><a class="toc-link" href="#标准事件"><span class="toc-number">1.</span> <span class="toc-text">标准事件</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#自定义事件"><span class="toc-number">2.</span> <span class="toc-text">自定义事件</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#event机制剖析"><span class="toc-number">3.</span> <span class="toc-text">event机制剖析</span></a><ol class="toc-child"><li class="toc-item toc-level-5"><a class="toc-link" href="#ApplicationListener接口"><span class="toc-number">3.1.</span> <span class="toc-text">ApplicationListener接口</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#ApplicationEventMulticaster"><span class="toc-number">3.2.</span> <span class="toc-text">ApplicationEventMulticaster</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#listener的检测"><span class="toc-number">3.3.</span> <span class="toc-text">listener的检测</span></a></li></ol></li><li class="toc-item toc-level-4"><a class="toc-link" href="#基于注解的event-listener"><span class="toc-number">4.</span> <span class="toc-text">基于注解的event listener</span></a><ol class="toc-child"><li class="toc-item toc-level-5"><a class="toc-link" href="#EventListener注解使用"><span class="toc-number">4.1.</span> <span class="toc-text">@EventListener注解使用</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#EventListener实现剖析"><span class="toc-number">4.2.</span> <span class="toc-text">@EventListener实现剖析</span></a></li></ol></li><li class="toc-item toc-level-4"><a class="toc-link" href="#事件异步处理"><span class="toc-number">5.</span> <span class="toc-text">事件异步处理</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#listener排序"><span class="toc-number">6.</span> <span class="toc-text">listener排序</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#泛型事件"><span class="toc-number">7.</span> <span class="toc-text">泛型事件</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#观察者模式"><span class="toc-number">8.</span> <span class="toc-text">观察者模式</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#总结和得到"><span class="toc-number">9.</span> <span class="toc-text">总结和得到</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#参考资料"><span class="toc-number">10.</span> <span class="toc-text">参考资料</span></a></li></ol></div></div><div class="post-content"><p>ApplicationContext的实现类也实现了生命周期接口，如：LifeCycle和Closable，通常执行这些接口方法，如：close(), stop()，表示ApplicationContext生命周期的终结，此时需要销毁context中的所有bean并释放bean已经加载的资源。Spring抽象并实现了一套消息发布和订阅机制，很好地完成了这一工作。在调用生命周期相关方法时发布消息，当我们的代码需要在context关闭时释放资源，就可以订阅这些消息，进行相应的处理，很容易实现扩展。<br></p>
+<p>本章主要介绍Spring的event机制并深入剖析其实现。<br><a id="more"></a></p>
+<p>Spring event相关接口包括：ApplicationEvent，ApplicationListener，ApplicationEventPublisher, ApplicationEventPublisherAware。ApplicationEvent是对消息通知的抽象，表示消息事件；ApplicationEventListner是事件接收者。一个事件发布后，注册到ApplicationContext中的listener都能收到消息通知，并做处理。这是一个典型的观察者模式。 <br></p>
+<p>通常定义新的Event需要实现ApplicationEvent接口，Spring4.2之后提供了注解方式，使得Event对象和Spring Api解耦。</p>
+<h4 id="标准事件"><a href="#标准事件" class="headerlink" title="标准事件"></a>标准事件</h4><p>Spring提供了几种内部事件，在ApplicationContext的生命周期中触发。</p>
+<p><strong>ContextRefreshEvent</strong></p>
+<p>当ApplicationContext完成初始化或refresh方法调用之后，触发该事件。</p>
+<ul>
+<li>完成初始化：所有Bean配置被加载，post-processor bean被检测和加载，singleton bean初始化完成</li>
+<li>refresh: 只要context没有关闭，就可以多次触发refresh；</li>
+</ul>
+<p><img src="/img/20180520/event_context_refresh.png" alt="refresh事件触发 1"></p>
+<p><img src="/img/20180520/event_context_refresh2.png" alt="refresh事件触发 2"></p>
+<p>注意：GenericApplicationContext不支持多次”hot” refresh</p>
+<p><strong>ContextStartedEvent和ContextStoppedEvent</strong></p>
+<p>当context调用start和stop方法时，会发布ContextStartedEvent和ContextStoppedEvent事件。</p>
+<p><img src="/img/20180520/event_context_start_stop.png" alt="start和stop事件触发"></p>
+<p><strong>ContextClosedEvent</strong></p>
+<p>当context调用close方法时，发布ContextClosedEvent事件。</p>
+<p><img src="/img/20180520/event_context_closed.png" alt="close事件触发 1"></p>
+<p><img src="/img/20180520/event_context_closed2.png" alt="close事件触发 2"></p>
+<p><strong>RequestHandledEvent</strong></p>
+<p>当一次Http请求处理结束时，发布RequestHandledEvent事件。仅限于使用Spring DispatchServlet的程序。</p>
+<p><img src="/img/20180520/event_context_request.png" alt="request handler事件触发"></p>
+<p><img src="/img/20180520/event_context_request2.png" alt="request handler事件触发"></p>
+<h4 id="自定义事件"><a href="#自定义事件" class="headerlink" title="自定义事件"></a>自定义事件</h4><p>spring event机制允许用户扩展新的事件及相应的处理，自定义事件需要实现ApplicationEvent接口，事件处理类需要实现ApplicationEventListener接口。</p>
+<p><strong>自定义event</strong></p>
+<p><img src="/img/20180520/event_custom_event.png" alt="自定义事件示例"></p>
+<p><strong>自定义event listener</strong></p>
+<p><img src="/img/20180520/event_custom_listener.png" alt="自定义事件处理示例"></p>
+<p><strong>事件发布</strong></p>
+<p><img src="/img/20180520/event_custom_publish.png" alt="事件发布示例"></p>
+<p>注入到EmailService的ApplicationEventPublisher是context本身，context实现了ApplicationEventPublisher接口。</p>
+<h4 id="event机制剖析"><a href="#event机制剖析" class="headerlink" title="event机制剖析"></a>event机制剖析</h4><h5 id="ApplicationListener接口"><a href="#ApplicationListener接口" class="headerlink" title="ApplicationListener接口"></a>ApplicationListener接口</h5><p>继承了java.util.EventListener接口，Spring3.0之后，可以指定listener关注的event类型。</p>
+<h5 id="ApplicationEventMulticaster"><a href="#ApplicationEventMulticaster" class="headerlink" title="ApplicationEventMulticaster"></a>ApplicationEventMulticaster</h5><p>管理多个ApplicationListener，并向它们发布事件消息。</p>
+<p><img src="/img/20180520/event_multicaster1.png" alt="ApplicationEventMulticaster接口"></p>
+<p><img src="/img/20180520/event_multicaster2.png" alt="ApplicationEventMulticaster接口"></p>
+<p>spring提供了实现类：SimpleApplicationEventMulticaster。</p>
+<h5 id="listener的检测"><a href="#listener的检测" class="headerlink" title="listener的检测"></a>listener的检测</h5><p>在Context启动过程中，类ApplicationListenerDetector用于检测ApplciationListener bean，并添加到ApplicationListener列表。 <br></p>
+<p>ApplicationListenerDetector实现了BeanPostProcessor接口。</p>
+<p><img src="/img/20180520/event_listener_detector1.png" alt="ApplicationListenerDetector"></p>
+<p><img src="/img/20180520/event_listener_detector2.png" alt="ApplicationListenerDetector"></p>
+<h4 id="基于注解的event-listener"><a href="#基于注解的event-listener" class="headerlink" title="基于注解的event listener"></a>基于注解的event listener</h4><h5 id="EventListener注解使用"><a href="#EventListener注解使用" class="headerlink" title="@EventListener注解使用"></a>@EventListener注解使用</h5><p><strong>标注到任意方法上，即可实现事件监听</strong></p>
+<p><img src="/img/20180520/event_annotation_use1.png" alt="@EventListener使用示例"></p>
+<p><strong>指定接收类型</strong></p>
+<p><img src="/img/20180520/event_annotation_use2.png" alt="指定接收类型"></p>
+<p><strong>根据条件过滤事件</strong></p>
+<p><img src="/img/20180520/event_annotation_use3.png" alt="条件过滤"></p>
+<h5 id="EventListener实现剖析"><a href="#EventListener实现剖析" class="headerlink" title="@EventListener实现剖析"></a>@EventListener实现剖析</h5><p>EventListerMethodProcessor负责检测@EventListener标注方法，并创建代理ApplicationListener对象，最后添加到context的ApplicationListener列表。具体实现步骤如下：</p>
+<ul>
+<li>在所有singleton bean初始化后，遍历每个bean对象</li>
+<li>检测到所有被@EventListener标注的方法</li>
+<li>对每个@EventListener方法，创建一个ApplicationListener对象</li>
+<li>把ApplicationListener对象加入context的ApplicationListener序列</li>
+</ul>
+<p><strong>检测@EventListener</strong></p>
+<p><img src="/img/20180520/event_listener_mothod_processor1.png" alt="EventListnerMethodProcessor类继承结构"></p>
+<p>EventListenerMethodProcessor实现了SmartInitializingSingleton接口，SmartInitializingSingleton接口在所有singleton bean被初始化后紧接着被调用，可以作为InitializingBean接口的替代方案。</p>
+<p>SmartInitializingSingleton接口及调用点</p>
+<p><img src="/img/20180520/event_SmartInitializingSingleton1.png" alt="SmartInitializingSingleton接口"></p>
+<p><img src="/img/20180520/event_SmartInitializingSingleton2.png" alt="SmartInitializingSingleton接口调用点"></p>
+<p><strong>EventListenerMethodProcessor调用</strong></p>
+<p><img src="/img/20180520/event_listener_mothod_processor_invoke.png" alt="EventListenerMethodProcessor调用"></p>
+<p><img src="/img/20180520/event_listener_mothod_processor_invoke2.png" alt="EventListenerMethodProcessor调用"></p>
+<p>当创建对象为ApplicationListenerAdapter时会进行初始化，添加EL表达式处理类EventExpressionEvaluator，用来处理@EventListener中的condition参数</p>
+<p><strong>ApplicationListnerAdapter</strong></p>
+<ul>
+<li>类继承图</li>
+</ul>
+<p><img src="/img/20180520/event_adapter_hier.png" alt="ApplicationListnerAdapter类继承图"></p>
+<ul>
+<li>处理Event事件</li>
+</ul>
+<p><img src="/img/20180520/event_adapter_process1.png" alt="处理event事件"></p>
+<p><img src="/img/20180520/event_adapter_process2.png" alt="处理event事件"></p>
+<p>上图所示，rocessEvent方法包含以下处理过程：</p>
+<pre><code>1. 处理event参数
+2. 根据EL表达式判断是否处理消息
+3. 调用event处理方法
+4. 处理方法返回
+</code></pre><p><img src="/img/20180520/event_adapter_process_param.png" alt="参数处理"></p>
+<p><img src="/img/20180520/event_adapter_process_condition.png" alt="条件处理"></p>
+<p><img src="/img/20180520/event_adapter_process_method.png" alt="调用event处理方法"></p>
+<p>方法调用中使用了桥接方法，关于桥接方法的介绍参考：JSL桥接方法</p>
+<p><img src="/img/20180520/event_adapter_process_return.png" alt="调用event处理方法"></p>
+<p>上图可以看到，如果方法产生新的事件，那么会继续发布新事件</p>
+<p>@EventListner注解实现采用了适配器模式，每个@EventListener注解方法都会被适配成一个ApplicationListnerAdapter对象。</p>
+<h4 id="事件异步处理"><a href="#事件异步处理" class="headerlink" title="事件异步处理"></a>事件异步处理</h4><p>添加@Async标签实现事件的异步处理。</p>
+<p><img src="/img/20180520/event_listener_process_async.png" alt="事件异步处理"></p>
+<p>使用异步事件处理需要注意：</p>
+<ul>
+<li>event listener抛出的Exception传播不到caller</li>
+<li>event listener不能自动发布返回的事件消息，只能通过注入ApplicationEventPublisher手动发布</li>
+</ul>
+<h4 id="listener排序"><a href="#listener排序" class="headerlink" title="listener排序"></a>listener排序</h4><p>通过@Order调整listener的调用顺序</p>
+<p><img src="/img/20180520/event_listener_process_order.png" alt="listener排序"></p>
+<h4 id="泛型事件"><a href="#泛型事件" class="headerlink" title="泛型事件"></a>泛型事件</h4><p><img src="/img/20180520/event_generic1.png" alt="泛型事件"></p>
+<p><img src="/img/20180520/event_generic2.png" alt="泛型事件"></p>
+<ul>
+<li>ResolableType: 封装了java.lang.reflect.Type对象，提供了一些便利方法，访问类型信息。</li>
+<li>ResolvableTypeProvider: 返回一个RelovableType，用来在运行时判断对象是否是泛型类型，因为Java在运行时会擦出泛型信息。</li>
+</ul>
+<h4 id="观察者模式"><a href="#观察者模式" class="headerlink" title="观察者模式"></a>观察者模式</h4><p>spring事件处理机制实现是典型的观察者模式，观察者模式可参考此博客内容。</p>
+<h4 id="总结和得到"><a href="#总结和得到" class="headerlink" title="总结和得到"></a>总结和得到</h4><ul>
+<li>熟悉了Spring事件处理机制及实现原理</li>
+<li>复习观察者模式</li>
+<li>可参考@EventListener注解检测和解析方式实现自定义注解的检测和解析</li>
+<li>可参考@EventListener EL表达式的解析实现添加EL表达式功能</li>
+</ul>
+<h4 id="参考资料"><a href="#参考资料" class="headerlink" title="参考资料"></a>参考资料</h4><p><a href="https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#context-functionality-events-annotation" target="_blank" rel="noopener">https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#context-functionality-events-annotation<br>https://www.jianshu.com/p/250030ea9b28<br>https://docs.oracle.com/javase/tutorial/java/generics/bridgeMethods.html#bridgeMethods</a></p>
+<p><a href="https://www.jianshu.com/p/250030ea9b28" target="_blank" rel="noopener">https://www.jianshu.com/p/250030ea9b28</a></p>
+<p><a href="https://docs.oracle.com/javase/tutorial/java/generics/bridgeMethods.html#bridgeMethods" target="_blank" rel="noopener">https://docs.oracle.com/javase/tutorial/java/generics/bridgeMethods.html#bridgeMethods</a></p>
+<p>spring源码</p>
+</div><script type="text/javascript" src="/js/share.js?v=0.0.0" async></script><a data-url="https://kiikgu.github.io/2018/05/20/Spring5之Event剖析/" data-id="cjobh63n0000ha8oqqqnimeiy" data-qrcode="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMYAAADGCAAAAACs8KCBAAACHklEQVR42u3aQW7DMAwEwP7/0+61QBFnl0oLWBqdjKaxODkQFKmvr3hdP9b9369fa+VtH14YGBiPZVy36z7c38858n73PDYMDIxzGK+CePWckPI3JG9+EzMGBgZGUPzNAEnCxcDAwGgZ60l29mYMDAyMWeJLPs3/J8F/4CyOgYHxQMbs1f/z/CfzDQwMjEcxrnLdJ9D19tlsYWBg7M1oC7vZoTQPdCUeDAyMvRntxYj205WrGHWxiIGBcQBjJcSVoNtEHF0Ow8DA2IiRbD8bD8xS57D1hoGBcQAj36xNqXmxmPy4L7+LgYGxKSO5ntWWjLPJY9vUw8DAOI3RlnT338rHn3mif3OsxcDA2JqRJLW8xT9Lmh8bIWBgYGzKaJv7eTnYXhGbJd96FoqBgfFYRr5ZHmjeXJtdtsDAwDiNMWvTtyPPPyxAMTAwtmbkR9BZKbnSaGuvZWBgYOzNaA+rSepcQeZgDAyMcxh5oZZg1q9itLtgYGCcycjLtTzQ+zZc+6NECRcDA2M7xkr7LAll5VBaJFwMDIytGXmCWy8E8zFDMTzAwMDYlHGVq22TrQxHCyoGBsbWjHzlo8ecNytG23ITAwNjD0abZPOScXapIqdiYGCcxlhptM14KwNODAwMjLZEy4eU7UCiKEYxMDAw4oBmafq+HIzaeRgYGAcw2mtbbeifTa8YGBinMfKjY5so8yTetuSGQ00MDIznMb4BXRID8RFLrY8AAAAASUVORK5CYII=" class="article-share-link">分享</a><div class="tags"><a href="/tags/spring/">spring</a><a href="/tags/EventListener/">EventListener</a><a href="/tags/事件发布处理机制/">事件发布处理机制</a></div><div class="post-nav"><a href="/2018/06/03/《影响力》读书总结/" class="pre">《影响力》读书总结</a><a href="/2018/05/10/Spring5之消息国际化-MessageSource/" class="next">Spring5之消息国际化(MessageSource)</a></div><div id="container"></div><link rel="stylesheet" href="/css/default.css?v=0.0.0"><script src="/js/gitment.browser.js?v=0.0.0"></script><script>var gitment = new Gitment({
+  owner: 'kiikgu',
+  repo: 'kiikgu.github.io',
+  oauth: {
+    client_id: '693ed6cbd6bf843bc6eb',
+    client_secret: '35cf5731f39505de09887c4e60c0171c82139f26',
+  },
+})
+gitment.render('container')
+</script></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank" class="search-form"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://kiikgu.github.io"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div><ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/JVM/">JVM</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/java/">java</a><span class="category-list-count">7</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/nio/">nio</a><span class="category-list-count">2</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/spring5学习/">spring5学习</a><span class="category-list-count">2</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/个人投资/">个人投资</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/怎么讲话/">怎么讲话</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/数据结构/">数据结构</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/生活和感悟/">生活和感悟</a><span class="category-list-count">2</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/读书/">读书</a><span class="category-list-count">13</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/问题排查/">问题排查</a><span class="category-list-count">1</span></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/Serializable/" style="font-size: 15px;">Serializable</a> <a href="/tags/nio/" style="font-size: 15px;">nio</a> <a href="/tags/G1/" style="font-size: 15px;">G1</a> <a href="/tags/Garbage-Firset/" style="font-size: 15px;">Garbage-Firset</a> <a href="/tags/mixed-GC/" style="font-size: 15px;">mixed GC</a> <a href="/tags/HashMap/" style="font-size: 15px;">HashMap</a> <a href="/tags/java/" style="font-size: 15px;">java</a> <a href="/tags/集合/" style="font-size: 15px;">集合</a> <a href="/tags/Map/" style="font-size: 15px;">Map</a> <a href="/tags/LinkedHashMap/" style="font-size: 15px;">LinkedHashMap</a> <a href="/tags/NIO/" style="font-size: 15px;">NIO</a> <a href="/tags/blocking-I-O/" style="font-size: 15px;">blocking I/O</a> <a href="/tags/nonblocking-I-O/" style="font-size: 15px;">nonblocking I/O</a> <a href="/tags/I-O-multipexer/" style="font-size: 15px;">I/O multipexer</a> <a href="/tags/signal-driven-I-O/" style="font-size: 15px;">signal driven I/O</a> <a href="/tags/aynchronous-I-O/" style="font-size: 15px;">aynchronous I/O</a> <a href="/tags/阻塞I-O/" style="font-size: 15px;">阻塞I/O</a> <a href="/tags/非阻塞I-O/" style="font-size: 15px;">非阻塞I/O</a> <a href="/tags/I-O多路复用/" style="font-size: 15px;">I/O多路复用</a> <a href="/tags/异步I-O/" style="font-size: 15px;">异步I/O</a> <a href="/tags/spring/" style="font-size: 15px;">spring</a> <a href="/tags/EventListener/" style="font-size: 15px;">EventListener</a> <a href="/tags/事件发布处理机制/" style="font-size: 15px;">事件发布处理机制</a> <a href="/tags/MessageSource/" style="font-size: 15px;">MessageSource</a> <a href="/tags/消息国际化/" style="font-size: 15px;">消息国际化</a> <a href="/tags/TreeMap/" style="font-size: 15px;">TreeMap</a> <a href="/tags/序列化/" style="font-size: 15px;">序列化</a> <a href="/tags/反序列化/" style="font-size: 15px;">反序列化</a> <a href="/tags/FileChannel/" style="font-size: 15px;">FileChannel</a> <a href="/tags/刻意练习/" style="font-size: 15px;">刻意练习</a> <a href="/tags/成为大师/" style="font-size: 15px;">成为大师</a> <a href="/tags/学会提问/" style="font-size: 15px;">学会提问</a> <a href="/tags/批判性思维/" style="font-size: 15px;">批判性思维</a> <a href="/tags/价值观假设/" style="font-size: 15px;">价值观假设</a> <a href="/tags/描述性假设/" style="font-size: 15px;">描述性假设</a> <a href="/tags/推理谬误/" style="font-size: 15px;">推理谬误</a> <a href="/tags/断言可信度/" style="font-size: 15px;">断言可信度</a> <a href="/tags/影响力/" style="font-size: 15px;">影响力</a> <a href="/tags/情商/" style="font-size: 15px;">情商</a> <a href="/tags/克服不良情绪/" style="font-size: 15px;">克服不良情绪</a> <a href="/tags/理性/" style="font-size: 15px;">理性</a> <a href="/tags/问题解决/" style="font-size: 15px;">问题解决</a> <a href="/tags/乱码/" style="font-size: 15px;">乱码</a> <a href="/tags/口才/" style="font-size: 15px;">口才</a> <a href="/tags/逻辑思维/" style="font-size: 15px;">逻辑思维</a> <a href="/tags/猫/" style="font-size: 15px;">猫</a> <a href="/tags/问题排查/" style="font-size: 15px;">问题排查</a> <a href="/tags/logback/" style="font-size: 15px;">logback</a> <a href="/tags/红黑树/" style="font-size: 15px;">红黑树</a> <a href="/tags/数据结构/" style="font-size: 15px;">数据结构</a> <a href="/tags/投资/" style="font-size: 15px;">投资</a> <a href="/tags/股票/" style="font-size: 15px;">股票</a> <a href="/tags/巴菲特/" style="font-size: 15px;">巴菲特</a> <a href="/tags/读书摘要/" style="font-size: 15px;">读书摘要</a> <a href="/tags/人生追求/" style="font-size: 15px;">人生追求</a> <a href="/tags/个人修炼/" style="font-size: 15px;">个人修炼</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2018/11/10/我家的几只猫/">我家的几只猫</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/07/26/NIO之IO多路复用/">NIO之IO多路复用</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/06/27/FileChannel之异步关闭和中断机制/">FileChannel之异步关闭和中断机制</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/06/03/《影响力》读书总结/">《影响力》读书总结</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/20/Spring5之Event剖析/">Spring5之Event剖析</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/10/Spring5之消息国际化-MessageSource/">Spring5之消息国际化(MessageSource)</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/09/《情商》读书摘要-情商本质-20180509/">《情商》读书摘要-情商本质-20180509</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/03/《情商》读书摘要-20180504/">《情商》读书摘要-认识情绪-20180504</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/03/25/《学会提问》读书摘要-20180325/">《学会提问》读书摘要-20180325</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/03/25/随思-人生修炼/">随思-人生修炼</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-external-link"> 友情链接</i></div><ul></ul><a href="http://www.example1.com/" title="site-name1" target="_blank">site-name1</a><ul></ul><a href="http://www.example2.com/" title="site-name2" target="_blank">site-name2</a><ul></ul><a href="http://www.example3.com/" title="site-name3" target="_blank">site-name3</a></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2018 <a href="/." rel="nofollow">王定坤的博客.</a> Powered by<a rel="nofollow" target="_blank" href="https://hexo.io"> Hexo.</a><a rel="nofollow" target="_blank" href="https://github.com/tufu9441/maupassant-hexo"> Theme</a> by<a rel="nofollow" target="_blank" href="https://github.com/pagecho"> Cho.</a></div></div></div><a id="rocket" href="#top" class="show"></a><script type="text/javascript" src="/js/totop.js?v=0.0.0" async></script><script type="text/javascript" src="//cdn.bootcss.com/fancybox/3.1.20/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.0" async></script><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/fancybox/3.1.20/jquery.fancybox.min.css"><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.0"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.0"></script></div></body></html>

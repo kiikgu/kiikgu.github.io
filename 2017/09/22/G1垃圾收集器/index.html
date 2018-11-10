@@ -1,0 +1,119 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="generator" content="Hexo 3.8.0"><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description" content="积累、思考、成长"><title>G1垃圾收集器 | 王定坤的博客</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.0"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/normalize/7.0.0/normalize.min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">G1垃圾收集器</h1><a id="logo" href="/.">王定坤的博客</a><p class="description">业精于勤而荒于嬉，行成于思而毁于随</p></div><div id="nav-menu"><a href="/." class="current"><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a><a href="/atom.xml"><i class="fa fa-rss"> 订阅</i></a></div></div><div id="layout" class="pure-g"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">G1垃圾收集器</h1><div class="post-meta">Sep 22, 2017<span> | </span><span class="category"><a href="/categories/JVM/">JVM</a></span><script src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><div class="clear"><div id="toc" class="toc-article"><div class="toc-title">文章目录</div><ol class="toc"><li class="toc-item toc-level-3"><a class="toc-link" href="#Garbage-First-GC概述"><span class="toc-number">1.</span> <span class="toc-text">Garbage-First GC概述</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#停顿可控"><span class="toc-number">1.1.</span> <span class="toc-text">停顿可控</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#内存压缩"><span class="toc-number">1.2.</span> <span class="toc-text">内存压缩</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#用G1替换CMS"><span class="toc-number">1.3.</span> <span class="toc-text">用G1替换CMS</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#G1垃圾收集过程"><span class="toc-number">2.</span> <span class="toc-text">G1垃圾收集过程</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#逻辑分代"><span class="toc-number">2.1.</span> <span class="toc-text">逻辑分代</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#remembered-set-Rset"><span class="toc-number">2.2.</span> <span class="toc-text">remembered set(Rset)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Yong-GC"><span class="toc-number">2.3.</span> <span class="toc-text">Yong GC</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#Mixed-GC"><span class="toc-number">2.4.</span> <span class="toc-text">Mixed GC</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#参数调优"><span class="toc-number">3.</span> <span class="toc-text">参数调优</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#G1重要参数列表："><span class="toc-number">3.1.</span> <span class="toc-text">G1重要参数列表：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#调优遵循的原则"><span class="toc-number">3.2.</span> <span class="toc-text">调优遵循的原则</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#大对象及大对象分配"><span class="toc-number">3.3.</span> <span class="toc-text">大对象及大对象分配</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#总结"><span class="toc-number">4.</span> <span class="toc-text">总结</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#参考"><span class="toc-number">5.</span> <span class="toc-text">参考</span></a></li></ol></div></div><div class="post-content"><p>Garbage-First(G1)垃圾收集器是一款低延迟且停顿时间可控的server端垃圾收集器；它适用于多核大内存的服务器运行环境，GC停顿时间不会随着堆栈及存活对象的增长而增长。G1收集器是CMS的替代</p>
+<a id="more"></a>
+<h3 id="Garbage-First-GC概述"><a href="#Garbage-First-GC概述" class="headerlink" title="Garbage-First GC概述"></a>Garbage-First GC概述</h3><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Garbage-First(G1)垃圾收集器是一款低延迟且停顿时间可控的server端垃圾收集器；它适用于多核大内存的服务器运行环境，GC停顿时间不会随着堆栈及存活对象的增长而增长。G1收集器是CMS的替代。</p>
+<h4 id="停顿可控"><a href="#停顿可控" class="headerlink" title="停顿可控"></a>停顿可控</h4><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;与CMS一样，G1也是一款低延迟垃圾收集器；与CMS不同的是G1的GC暂停时间是可控的，我们可以在应用启动时通过<strong><em>MaxGCPauseMillis</em></strong>指定最大停顿时间，G1会尽可能满足这个目标，它是怎么做到的呢？<br><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;G1把堆划分为很多小区域(region)来组织，每个区域是一段连续的内存区间，在垃圾回收的时有一个全局标记阶段，在标记结束后G1知道每个region的垃圾占用情况，它根据最大停顿时间来决定回收垃圾最多的一个或多个region。</p>
+<p><strong>备注：G1会尽量满足<em>MaxGCPauseMillis</em>指定的停顿时间，但不一定能达到目标</strong></p>
+<h4 id="内存压缩"><a href="#内存压缩" class="headerlink" title="内存压缩"></a>内存压缩</h4><p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;回收regions时，G1会选择一块region，把被回收region中的存活对象拷贝到新region中。与CMS不同的是它不会留下内存碎片(G1采用复制算法，CMS采用标记-清除算法？)，同样整个过程是并发进行。</p>
+<ul>
+<li>CMS采用标记-清除算法，会产生内存碎片，提供了参数-XX:+UseCMSCompactAtFullCollection来控制在Full GC时是否进行内存碎片整理，虽然解决了碎片问题，但是Full GC整个阶段时间比较长；-XX:CMSFullGCsBeforeCompaction指定执行多少次不压缩的Full GC后，来一次带压缩的Full GC，默认是0表示每次Full GC都要执行压缩。</li>
+<li>Parallel会对整个堆执行压缩，停顿时间长</li>
+</ul>
+<h4 id="用G1替换CMS"><a href="#用G1替换CMS" class="headerlink" title="用G1替换CMS"></a>用G1替换CMS</h4><p>使用CMS出现以下情况时，可以用G1替换CMS</p>
+<ul>
+<li>存活对象占堆栈50%以上</li>
+<li>对象分配率或晋升老年代率变化比较大</li>
+<li>GC暂停时间长或压缩停顿时间长(超过0.5s)</li>
+</ul>
+<p>CMS的分代思想是基于这样一个经验：98%的对象都是朝生夕死，所以大部分对象在新生代进行minor GC时被回收掉，只有小部分对象晋升到老年代；老年代缓慢增长且老年代中大部分对象都是垃圾，一次major GC可以释放大部分老年代空间。如果存活对象较多，那么major GC比较频繁，且空间释放率也不高；CMS新生代和老年代是在JVM启动时指定，运行过程中不能动态调整的，如果对象分配率或老年代晋升率变化比较大，则CMS很难去适应变化。<br></p>
+<p>G1可根据历史每一次垃圾收集经验值，估算本次回收的region数，从而控制GC停顿时间。在全局标记时获取到每个region的垃圾占用情况，且全局标记是并发进行，所以堆栈的大小及存活对象的多少不会对停顿时间造成影响。<br></p>
+<p>G1适合内存超过6GB，且延时低于0.5s的应用场景</p>
+<h3 id="G1垃圾收集过程"><a href="#G1垃圾收集过程" class="headerlink" title="G1垃圾收集过程"></a>G1垃圾收集过程</h3><p><img src="/img/20171007/20171007_G1_GC.png" alt="G1 Heap划分图"></p>
+<p>整个堆物理上被划分为很多大小相同的region，每个region大小在1MB~32MB（可以通过参数配置），总共region数不超过2048个。</p>
+<h4 id="逻辑分代"><a href="#逻辑分代" class="headerlink" title="逻辑分代"></a>逻辑分代</h4><p>整个堆逻辑上被划分为eden区、survivor区、old区，每个区都是由一组region构成（<strong>region可以不连续</strong>），eden区和survior区组成新生代，old区组成老年代。<br></p>
+<h4 id="remembered-set-Rset"><a href="#remembered-set-Rset" class="headerlink" title="remembered set(Rset)"></a>remembered set(Rset)</h4><p>分代收集出现的一个问题是：垃圾回收时只是收集部分内存，怎么知道回收内存中哪些对象是被跨带引用？很容易想到用一个数据结构把这种跨带访问引用(通常是老年代引用新生代对象)给记下来，Rset就是做这个事情的。<br></p>
+<p>CMS中Rset记录的是新生代和老年代之间的跨带引用；<strong>G1中每个region都有一个单独的Rset</strong>，记录的是所有指向该region的引用；G1通过对Reference写操作产生的Write Barrier中断，把引用信息更新到它所指向的region对应的Rset中。 在扫描region进行标记时，就可以并发扫描每个region的Rset，而不用扫描整个堆。</p>
+<h4 id="Yong-GC"><a href="#Yong-GC" class="headerlink" title="Yong GC"></a>Yong GC</h4><p>对象首先被分配到新生代，当新生代被占满时发生Yong GC。与CMS类似，eden区和survior区的存活对象会被拷贝到新的region，survior区中超过指定age的对象晋升到老年代；同样Yong GC是需要STW（stop-the-world）。</p>
+<h4 id="Mixed-GC"><a href="#Mixed-GC" class="headerlink" title="Mixed GC"></a>Mixed GC</h4><p>新生代GC和老年代同时发生GC时，称为Mixed GC。G1在对全堆存活对象进行标记(Marking cycle)后会发生Mixed GC；当整个堆使用比例超过<strong><em>InitiatingHeapOccupancyPercent</em></strong>指定值时，会触发全堆标记，进而触发Mixed GC。<strong><em>-XX:InitiatingHeapOccupancyPercent=\<nn></nn></em></strong> 默认为45。全堆标记包含以下阶段：</p>
+<p><strong>初始标记(Initial marking phase)</strong></p>
+<p>标记出root region，此阶段发生在Yong GC的最后，且包含在Yong GC中。由此可以看出Mixed GC发生过程：Yong GC =&gt; Marking Cycle =&gt; Mixed GC</p>
+<p><strong>Root region扫描(Root region scanning phase)</strong></p>
+<p>扫描survior区中由初始标记出来的root region，找出指向old区的对象引用，并标记引用对象；该阶段与应用并发进行，必须在下一个Yong GC发生之前完成。</p>
+<p><strong>并发标记(Concurrent remark phase)</strong></p>
+<p>扫描整个堆，找到所有存活对象；该阶段与应用并发进行，可以被Yong GC中断。</p>
+<p><strong>重新标记(Remark phase)</strong></p>
+<p>这个阶段会修正在并发标记阶段因用户线程运行导致出现偏差的部分标记记录。在mark cycle开始时，G1会记录当前堆中存活对象的快照(Snapshot-at-the-beginning/SATB)；重新标记阶段会遍历所有SATB缓存，搜索出已经不可达的对象，并处理这些引用。该阶段需要暂停应用(STW)。</p>
+<p><strong>清理(Cleanup phase)</strong></p>
+<p>清理阶段做的事情，首先是统计记录所有空region和下次Mixed GC时的候选region，并且清理Rset，这个过程是STW的；然后重置空region并放入空闲队列，这个过程是并发的。</p>
+<h3 id="参数调优"><a href="#参数调优" class="headerlink" title="参数调优"></a>参数调优</h3><h4 id="G1重要参数列表："><a href="#G1重要参数列表：" class="headerlink" title="G1重要参数列表："></a>G1重要参数列表：</h4><table>
+<thead>
+<tr>
+<th>参数及默认值</th>
+<th>解释及取值参考</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-XX:G1HeapRegionSize=n</td>
+<td>每个region大小，取值在1MB~32MB之间且2的次方，<br> region个数不超过2048个，调整参数使得region个数尽可能多</td>
+</tr>
+<tr>
+<td>-XX:MaxGCPauseMillis=200</td>
+<td>最大GC停顿时间，默认是200ms</td>
+</tr>
+<tr>
+<td>-XX:G1NewSizePercent=5</td>
+<td>新生代内存暂用下限，默认为heap的5%</td>
+</tr>
+<tr>
+<td>-XX:G1MaxNewSizePercent=60</td>
+<td>新生代内存占用上限，默认为heap的60%</td>
+</tr>
+<tr>
+<td>-XX:ParallelGCThreads=n</td>
+<td>STW时收集线程的并发数，CPU个数小于等于8时，设置n为CPU的个数；<br> 当CPU个数大于8时，设置n为CPU个数的5/8；<br> <a href="https://baike.baidu.com/item/SPARC/10230459?fr=aladdin" target="_blank" rel="noopener">SPARC</a>系统中，设置n为CPU个数的5/16</td>
+</tr>
+<tr>
+<td>-XX:ConcGCThreads=n</td>
+<td>并发标记线程数，设置n为并发搜集线程数(ParallelGCThreads)的1/4</td>
+</tr>
+<tr>
+<td>-XX:InitiatingHeapOccupancyPercent=45</td>
+<td>触发marking cycle的heap使用阈值，默认为heap的45%</td>
+</tr>
+<tr>
+<td>-XX:G1MixedGCLiveThresholdPercent=85</td>
+<td>指定old region会被mixed GC选中回收时的空间使用阈值，默认为85%，<br> 当old region空间使用超过85%时，那么在mixed GC时，该region会被回收掉</td>
+</tr>
+<tr>
+<td>-XX:G1HeapWastePercent=5</td>
+<td>当可回收内存小于指定值时，不会触发Mixed GC， 默认为5%</td>
+</tr>
+<tr>
+<td>-XX:G1MixedGCCountTarget=8</td>
+<td>指定在marking cycle之后，用于收集老年代的mixed GC个数，<br> 启动多个mixed GC可以缩短老年代的收集时间</td>
+</tr>
+<tr>
+<td>-XX:G1OldCSetRegionThresholdPercent=10</td>
+<td>指定一个mixed GC时回收的old region的最大个数，默认为heap的10%</td>
+</tr>
+<tr>
+<td>-XX:G1ReservePercent=10</td>
+<td>设置保留内存大小，用于避免对象拷贝时新的region空间不足的情况，默认预留heap的10%，<br> 要根据整个heap的大小调整改值</td>
+</tr>
+</tbody>
+</table>
+<h4 id="调优遵循的原则"><a href="#调优遵循的原则" class="headerlink" title="调优遵循的原则"></a>调优遵循的原则</h4><ul>
+<li>新生代大小：不要显式地通过-Xmn，-XX:NewRatio设置新生代大小</li>
+<li>GC暂停时间：平衡GC暂停时间和吞吐量，短暂停要以牺牲吞吐量为代价，G1的目标是90%的应用时间，10%的暂停时间。</li>
+<li>调整Mixed GC参数：<br><br> 调整标记触发阈值：-XX:InitiatingHeapOccupancyPercent<br><br> 调整mixed GC触发条件：-XX:G1MixedGCLiveThresholdPercent 和 -XX:G1HeapWastePercent<br><br> 调整old region回收限制：-XX:G1MixedGCCountTarget 和 -XX:G1OldCSetRegionThresholdPercent <br></li>
+</ul>
+<h4 id="大对象及大对象分配"><a href="#大对象及大对象分配" class="headerlink" title="大对象及大对象分配"></a>大对象及大对象分配</h4><p>大小超过region大小一般的对象成为大对象，大对象直接被分配在老年代中的humongous regions中，如上图<strong><em>G1 Heap划分图</em></strong> H标识的区域。humongous regions是一组连续的region，StartsHumongous标识开头region，ContinuesHumongous标识后续region。</p>
+<p><img src="/img/20171007/20171007_G1_humogous_obj.png" alt="Humongous object region占用图"></p>
+<ul>
+<li>humongous regions由开头的startshumongous region后跟连续的一个或多个continueshumongous region组成</li>
+<li>最后一个region会产生内存碎片</li>
+</ul>
+<p>大对象在marking cycle的cleanup阶段和Full GC时回收；为了减少大对象拷贝的开销，在回收拷贝存活对象阶段不对大对象进行拷贝，所以碎片会一直存在到发生Full GC; Full GC发生时会整理压缩大对象的内存空间。<br><br>如果因为大对象碎片问题导致不断出现并发标记，可以通过-XX:G1HeapRegionSize调整region大小，将大对象变成正常对象。</p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>本文首先介绍了G1垃圾收集器的特点、定位及使用场景，然后介绍了G1的基本实现原理及GC过程，最后介绍了G1常用调优参数及调优注意事项和大对象分配时出现的碎片问题。</p>
+<h3 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h3><p><a href="http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/" target="_blank" rel="noopener">http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/</a><br><a href="http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/generations.html" target="_blank" rel="noopener">http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/generations.html</a><br><a href="http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/g1_gc.html" target="_blank" rel="noopener">http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/g1_gc.html</a><br><a href="http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/g1_gc_tuning.html" target="_blank" rel="noopener">http://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/g1_gc_tuning.html</a><br><a href="http://blog.csdn.net/iter_zc/article/details/41825395" target="_blank" rel="noopener">http://blog.csdn.net/iter_zc/article/details/41825395</a></p>
+<p>版权声明：本文为博主原创文章，转载请注明出处</p>
+</div><script type="text/javascript" src="/js/share.js?v=0.0.0" async></script><a data-url="https://kiikgu.github.io/2017/09/22/G1垃圾收集器/" data-id="cjobh63ml0004a8oqh1o4zdar" data-qrcode="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMYAAADGCAAAAACs8KCBAAACKUlEQVR42u3ayw6DMAxEUf7/p9NtK1E6M4ZKsW9WFaKQw8KKH8chr/W23q9c33l9j/KWmxcMGDC2ZazLVX/Bt+dk17/uBAYMGAMYyuuV0KmEZv1jGSEbBgwYMIRQq9+jbx0GDBgwMoYSTO1N/D/gwoABY0OGksQ+HY6VpPeGXBwGDBgbMrJH/+f3I/0NGDBgbMVY5nKDoNtgWNGCAQNGb0a9TOYmqMpARrYfGDBgdGW4AxaVZqSbshowGDBgDGBkJTM9gLqHQr21+RFwYcCAMYyhb0u5kgVlowEAAwaMAYzKUEXlcJkdKH/0YGHAgNGOoQQ4t0ngdhvrBT4YMGD0ZrhDYEo5TB/hytgn+4QBA0Zrhlum10cr6v+qDG3AgAGjN0PvDLpB1j2x3lCGgwEDRiNG5WCnb/reYQsYMGDMYWRJrJ6I6h/IbQmcDFvAgAGjKaN0q3xkzBqf7uEVBgwYXRluyV65rqevWaJ78l8YMGC0ZtQbh3pJzh2q0MfLYMCAMYFRKeJnoxVZwP2xKxgwYIxkVFqV+iCFDgsDLgwYMBoxsmEIY3aj8C4j4MKAAaMdY5nLTUGzcQ2bCgMGjNaMpwNlVjjTS3s2DAYMGNsy3AGIVV5uCU86mMKAAWMAwx2hUOJ31p7MQj8MGDBg6Ae4bIDDbRUc19uFAQPGeEZ9bMLlSW1RGDBgDGAoCadeOMtKbJWGBAwYMHoz9NQxOzhmzywdE2HAgNGH8QJhLnRysav0wgAAAABJRU5ErkJggg==" class="article-share-link">分享</a><div class="tags"><a href="/tags/G1/">G1</a><a href="/tags/Garbage-Firset/">Garbage-Firset</a><a href="/tags/mixed-GC/">mixed GC</a></div><div class="post-nav"><a href="/2017/09/22/常用术语词汇/" class="pre">常用英文术语汇总</a><a href="/2017/09/19/读书笔记201709/" class="next">读书笔记201709</a></div><div id="container"></div><link rel="stylesheet" href="/css/default.css?v=0.0.0"><script src="/js/gitment.browser.js?v=0.0.0"></script><script>var gitment = new Gitment({
+  owner: 'kiikgu',
+  repo: 'kiikgu.github.io',
+  oauth: {
+    client_id: '693ed6cbd6bf843bc6eb',
+    client_secret: '35cf5731f39505de09887c4e60c0171c82139f26',
+  },
+})
+gitment.render('container')
+</script></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank" class="search-form"><input type="text" name="q" maxlength="20" placeholder="Search"><input type="hidden" name="sitesearch" value="https://kiikgu.github.io"></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div><ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/JVM/">JVM</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/java/">java</a><span class="category-list-count">7</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/nio/">nio</a><span class="category-list-count">2</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/spring5学习/">spring5学习</a><span class="category-list-count">2</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/个人投资/">个人投资</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/怎么讲话/">怎么讲话</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/数据结构/">数据结构</a><span class="category-list-count">1</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/生活和感悟/">生活和感悟</a><span class="category-list-count">2</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/读书/">读书</a><span class="category-list-count">13</span></li><li class="category-list-item"><a class="category-list-link" href="/categories/问题排查/">问题排查</a><span class="category-list-count">1</span></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/Serializable/" style="font-size: 15px;">Serializable</a> <a href="/tags/nio/" style="font-size: 15px;">nio</a> <a href="/tags/G1/" style="font-size: 15px;">G1</a> <a href="/tags/Garbage-Firset/" style="font-size: 15px;">Garbage-Firset</a> <a href="/tags/mixed-GC/" style="font-size: 15px;">mixed GC</a> <a href="/tags/HashMap/" style="font-size: 15px;">HashMap</a> <a href="/tags/java/" style="font-size: 15px;">java</a> <a href="/tags/集合/" style="font-size: 15px;">集合</a> <a href="/tags/Map/" style="font-size: 15px;">Map</a> <a href="/tags/LinkedHashMap/" style="font-size: 15px;">LinkedHashMap</a> <a href="/tags/NIO/" style="font-size: 15px;">NIO</a> <a href="/tags/blocking-I-O/" style="font-size: 15px;">blocking I/O</a> <a href="/tags/nonblocking-I-O/" style="font-size: 15px;">nonblocking I/O</a> <a href="/tags/I-O-multipexer/" style="font-size: 15px;">I/O multipexer</a> <a href="/tags/signal-driven-I-O/" style="font-size: 15px;">signal driven I/O</a> <a href="/tags/aynchronous-I-O/" style="font-size: 15px;">aynchronous I/O</a> <a href="/tags/阻塞I-O/" style="font-size: 15px;">阻塞I/O</a> <a href="/tags/非阻塞I-O/" style="font-size: 15px;">非阻塞I/O</a> <a href="/tags/I-O多路复用/" style="font-size: 15px;">I/O多路复用</a> <a href="/tags/异步I-O/" style="font-size: 15px;">异步I/O</a> <a href="/tags/spring/" style="font-size: 15px;">spring</a> <a href="/tags/EventListener/" style="font-size: 15px;">EventListener</a> <a href="/tags/事件发布处理机制/" style="font-size: 15px;">事件发布处理机制</a> <a href="/tags/MessageSource/" style="font-size: 15px;">MessageSource</a> <a href="/tags/消息国际化/" style="font-size: 15px;">消息国际化</a> <a href="/tags/TreeMap/" style="font-size: 15px;">TreeMap</a> <a href="/tags/序列化/" style="font-size: 15px;">序列化</a> <a href="/tags/反序列化/" style="font-size: 15px;">反序列化</a> <a href="/tags/FileChannel/" style="font-size: 15px;">FileChannel</a> <a href="/tags/刻意练习/" style="font-size: 15px;">刻意练习</a> <a href="/tags/成为大师/" style="font-size: 15px;">成为大师</a> <a href="/tags/学会提问/" style="font-size: 15px;">学会提问</a> <a href="/tags/批判性思维/" style="font-size: 15px;">批判性思维</a> <a href="/tags/价值观假设/" style="font-size: 15px;">价值观假设</a> <a href="/tags/描述性假设/" style="font-size: 15px;">描述性假设</a> <a href="/tags/推理谬误/" style="font-size: 15px;">推理谬误</a> <a href="/tags/断言可信度/" style="font-size: 15px;">断言可信度</a> <a href="/tags/影响力/" style="font-size: 15px;">影响力</a> <a href="/tags/情商/" style="font-size: 15px;">情商</a> <a href="/tags/克服不良情绪/" style="font-size: 15px;">克服不良情绪</a> <a href="/tags/理性/" style="font-size: 15px;">理性</a> <a href="/tags/问题解决/" style="font-size: 15px;">问题解决</a> <a href="/tags/乱码/" style="font-size: 15px;">乱码</a> <a href="/tags/口才/" style="font-size: 15px;">口才</a> <a href="/tags/逻辑思维/" style="font-size: 15px;">逻辑思维</a> <a href="/tags/猫/" style="font-size: 15px;">猫</a> <a href="/tags/问题排查/" style="font-size: 15px;">问题排查</a> <a href="/tags/logback/" style="font-size: 15px;">logback</a> <a href="/tags/红黑树/" style="font-size: 15px;">红黑树</a> <a href="/tags/数据结构/" style="font-size: 15px;">数据结构</a> <a href="/tags/投资/" style="font-size: 15px;">投资</a> <a href="/tags/股票/" style="font-size: 15px;">股票</a> <a href="/tags/巴菲特/" style="font-size: 15px;">巴菲特</a> <a href="/tags/读书摘要/" style="font-size: 15px;">读书摘要</a> <a href="/tags/人生追求/" style="font-size: 15px;">人生追求</a> <a href="/tags/个人修炼/" style="font-size: 15px;">个人修炼</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2018/11/10/我家的几只猫/">我家的几只猫</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/07/26/NIO之IO多路复用/">NIO之IO多路复用</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/06/27/FileChannel之异步关闭和中断机制/">FileChannel之异步关闭和中断机制</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/06/03/《影响力》读书总结/">《影响力》读书总结</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/20/Spring5之Event剖析/">Spring5之Event剖析</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/10/Spring5之消息国际化-MessageSource/">Spring5之消息国际化(MessageSource)</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/09/《情商》读书摘要-情商本质-20180509/">《情商》读书摘要-情商本质-20180509</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/03/《情商》读书摘要-20180504/">《情商》读书摘要-认识情绪-20180504</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/03/25/《学会提问》读书摘要-20180325/">《学会提问》读书摘要-20180325</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/03/25/随思-人生修炼/">随思-人生修炼</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-external-link"> 友情链接</i></div><ul></ul><a href="http://www.example1.com/" title="site-name1" target="_blank">site-name1</a><ul></ul><a href="http://www.example2.com/" title="site-name2" target="_blank">site-name2</a><ul></ul><a href="http://www.example3.com/" title="site-name3" target="_blank">site-name3</a></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2018 <a href="/." rel="nofollow">王定坤的博客.</a> Powered by<a rel="nofollow" target="_blank" href="https://hexo.io"> Hexo.</a><a rel="nofollow" target="_blank" href="https://github.com/tufu9441/maupassant-hexo"> Theme</a> by<a rel="nofollow" target="_blank" href="https://github.com/pagecho"> Cho.</a></div></div></div><a id="rocket" href="#top" class="show"></a><script type="text/javascript" src="/js/totop.js?v=0.0.0" async></script><script type="text/javascript" src="//cdn.bootcss.com/fancybox/3.1.20/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.0" async></script><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/fancybox/3.1.20/jquery.fancybox.min.css"><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.0"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.0"></script></div></body></html>
